@@ -6,7 +6,9 @@ def extract_zip(zip_path: Path, extract_dir: Path) -> list[Path]:
 
     try:
         with ZipFile(zip_path, "r") as zip_file:
-            for member in zip_file.infolist():
+            members = zip_file.infolist()
+
+            for member in members:
                 member_path = Path(member.filename)
 
                 """Prevents files from being extracted outside the target directory."""
@@ -15,10 +17,11 @@ def extract_zip(zip_path: Path, extract_dir: Path) -> list[Path]:
                         f"Unsafe file path detected: {member.filename}"
                     )
 
-                zip_file.extractall(extract_dir)
+            zip_file.extractall(extract_dir)
 
-                return [
+            return [
                     extract_dir / member.filename for member in zip_file.infolist() if not member.is_dir()
-                ]
+            ]
+        
     except BadZipFile:
         raise ValueError("Invalid or corrupted ZIP file.")

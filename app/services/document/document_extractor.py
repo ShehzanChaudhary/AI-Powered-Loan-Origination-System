@@ -1,4 +1,5 @@
 from pathlib import Path
+from functools import lru_cache
 from azure.core.credentials import AzureKeyCredential
 from azure.ai.documentintelligence import DocumentIntelligenceClient
 
@@ -72,4 +73,13 @@ class DocumentExtractor:
             extracted_documents.append(extracted_document)
 
         return extracted_documents
+
+@lru_cache
+def get_document_extractor() -> DocumentExtractor:
+    """
+    Returns a single shared DocumentExtractor instance across the whole app,
+    instead of creating a new Azure client (and a new network connection
+    pool) on every request.
+    """
+    return DocumentExtractor()
 

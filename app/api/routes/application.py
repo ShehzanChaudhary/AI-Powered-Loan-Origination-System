@@ -1,8 +1,11 @@
 from uuid import uuid4
 from pathlib import Path
 from fastapi import APIRouter, UploadFile, File, HTTPException
+from fastapi.concurrency import run_in_threadpool
 
 from app.services.ingestion.zip_handler import extract_zip
+from app.services.document.document_extractor import get_document_extractor
+from app.services.document.document_classifier import DocumentClassifier
 from app.schemas.application import DocumentInfo, ApplicationResponse
 
 router = APIRouter(
@@ -12,19 +15,21 @@ router = APIRouter(
 
 UPLOAD_DIR = Path("data/uploads")
 
+classifier = DocumentClassifier()
+
+
 def generate_application_id() -> str:
     """Generates a unique application ID for each loan application."""
     return f"LN-{uuid4().hex[:8].upper()}"
 
 
-
-@router.post("/upload")
+@router.post("/upload", response_model=ApplicationResponse)
 async def upload_applications(file: UploadFile = File(...)):
-    """Receives the customer's ZIP file, validates it, generates an application ID,
-       and saves the uploaded ZIP inside its application-specific directory."""
-    
+    """Receives the customer's ZIP file, validates it, extracts and classifies
+       every document inside, and returns the processed application summary."""
+
     if not file.filename.lower().endswith(".zip"):
-        raise HTTPException (
+        raise HTTPException(
             status_code=400,
             detail="Only ZIP files are allowed."
         )
@@ -55,21 +60,26 @@ async def upload_applications(file: UploadFile = File(...)):
             detail=str(error)
         )
 
+    """The Azure SDK calls here are synchronous/blocking. If called directly within an `async def` route, they would block the entire server's event loop (meaning the server wouldn't be able to handle any other requests until the Azure response arrives). `run_in_threadpool executes this in a separate thread, keeping the event loop free."""
+    
+    extractor = get_document_extractor()
+    extracted_documents = await run_in_threadpool(
+        extractor.extract_documents,
+        [str(path) for path in extracted_files]
+    )
+
     documents = [
         DocumentInfo(
-            file_name=file_path.name,
-            document_type="UNKNOWN",
-            status="Recieved"
+            file_name=document.file_name,
+            document_type=classifier.classify(document.text).document_type,
+            status="received"
         )
-        for file_path in extracted_files
+        for document in extracted_documents
     ]
 
-    return {
-        "application_id": application_id,
-        "Status": "recieved",
-        "file_name": file.filename,
-        "documents": documents
-    }
-
-
-
+    return ApplicationResponse(
+        application_id=application_id,
+        status="received",
+        file_name=file.filename,
+        documents=documents
+    )
