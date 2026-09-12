@@ -6,3 +6,5 @@ azure-ai-documentintelligence
 openai
 jinja2
 aiohttp
+rapidfuzz 
+python-dateutil

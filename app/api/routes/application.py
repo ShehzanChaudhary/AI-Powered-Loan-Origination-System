@@ -7,12 +7,14 @@ from app.services.ingestion.zip_handler import extract_zip
 from app.services.document import document_extractor
 from app.services.document.document_classifier import DocumentClassifier
 from app.services.document.field_extractor import extract_structured_fields
+from app.services.verification.cross_document_verifier import CrossDocumentVerifier
 from app.schemas.application import DocumentInfo, ApplicationResponse
 
 router = APIRouter(prefix="/api/v1/applications", tags=["Applications"])
 
 UPLOAD_DIR = Path("data/uploads")
 classifier = DocumentClassifier()
+verifier = CrossDocumentVerifier()
 
 
 def generate_application_id() -> str:
@@ -22,8 +24,9 @@ def generate_application_id() -> str:
 
 @router.post("/upload", response_model=ApplicationResponse)
 async def upload_applications(file: UploadFile = File(...)):
-    """Receives the customer's ZIP file, validates it, extracts and classifies
-    every document inside, and returns the processed application summary."""
+    """Receives the customer's ZIP file, validates it, extracts, classifies,
+    verifies every document inside, and returns the processed application
+    summary."""
     if not file.filename.lower().endswith(".zip"):
         raise HTTPException(status_code=400, detail="Only ZIP files are allowed.")
 
@@ -49,8 +52,11 @@ async def upload_applications(file: UploadFile = File(...)):
         [str(path) for path in extracted_files]
     )
 
-    # Stage 2: classification is cheap/CPU-only keyword matching - fine inline
-    classifications = [classifier.classify(doc.text) for doc in extracted_documents]
+    # Stage 2: classification - fast keyword match first, LLM fallback for
+    # low-confidence documents.
+    classifications = await asyncio.gather(*(
+        classifier.classify(doc.text) for doc in extracted_documents
+    ))
 
     # Stage 3: structured field extraction for ALL documents, concurrently
     field_results = await asyncio.gather(*(
@@ -68,9 +74,14 @@ async def upload_applications(file: UploadFile = File(...)):
         for doc, classification, fields in zip(extracted_documents, classifications, field_results)
     ]
 
+    # Stage 4: cross-document verification - rule-based, deterministic
+    documents_by_type = {doc.document_type: doc.fields for doc in documents}
+    verification = verifier.verify(documents_by_type)
+
     return ApplicationResponse(
         application_id=application_id,
         status="received",
         file_name=file.filename,
         documents=documents,
+        verification=verification,
     )
