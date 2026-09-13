@@ -9,6 +9,8 @@ class Settings(BaseSettings):
     openrouter_base_url: str = "https://openrouter.ai/api/v1"
     MODEL: str = "openai/gpt-4o-mini"
 
+    credit_bureau_base_url: str = "http://127.0.0.1:8000"
+
     model_config = SettingsConfigDict(
         env_file=".env"
     )

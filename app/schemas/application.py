@@ -1,6 +1,8 @@
 from typing import Optional, Union
 from pydantic import BaseModel, Field
 
+from app.schemas.credit_bureau import CibilReport
+
 
 class BaseExtractedFields(BaseModel):
     """Fields common to every document type, regardless of extraction source."""
@@ -133,16 +135,6 @@ class VerificationReport(BaseModel):
     checks: list[VerificationCheck]
     overall_status: str  # "CLEAN" or "FLAGGED"
 
-
-class ApplicationResponse(BaseModel):
-    """Represents the structured response returned after processing an application upload."""
-    application_id: str
-    status: str
-    file_name: str
-    documents: list[DocumentInfo]
-    verification: Optional[VerificationReport] = None
-
-
 class ExtractedDocument(BaseModel):
     """Represents the clean document extraction result used internally by the application."""
     file_name: str
@@ -157,3 +149,37 @@ class DocumentClassificationResult(BaseModel):
     matched_keywords: list[str]
     score: int
     confidence: float
+
+class RiskFactor(BaseModel):
+    """One line item in the risk scorecard - fully auditable."""
+    name: str
+    points: int
+    detail: str
+
+
+class RiskAssessment(BaseModel):
+    """The rule-based risk scorecard result for one application."""
+    total_score: int
+    risk_band: str  # "LOW" / "MEDIUM" / "HIGH"
+    factors: list[RiskFactor]
+
+class FinalDecision(BaseModel):
+    """The final underwriting decision. 'decision' and 'reasons' are set
+    entirely by the deterministic DecisionEngine. 'justification' is an
+    LLM-generated plain-language explanation of those same reasons -
+    the LLM never influences 'decision' or 'reasons'."""
+    decision: str # "APPROVED" / "REJECTED" / "MANUAL_REVIEW"
+    reasons: list[str]
+    justification: Optional[str] = None
+
+class ApplicationResponse(BaseModel):
+    """Represents the structured response returned after processing an application upload."""
+    application_id: str
+    status: str
+    file_name: str
+    documents: list[DocumentInfo]
+    verification: Optional[VerificationReport] = None
+    credit_report: Optional["CibilReport"] = None
+    risk_assessment: Optional[RiskAssessment] = None
+    final_decision: Optional[FinalDecision] = None
+

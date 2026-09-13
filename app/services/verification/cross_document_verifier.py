@@ -4,6 +4,8 @@ signals (name mismatches, address mismatches, self-declared vs. actual
 income, etc). Deliberately rule-based, NOT LLM-based - decisions in this
 system must stay deterministic and auditable."""
 
+import re
+
 from dateutil import parser as date_parser
 from rapidfuzz import fuzz
 
@@ -20,6 +22,18 @@ from app.schemas.application import (
 NAME_MATCH_THRESHOLD = 85
 SALARY_MATCH_TOLERANCE_PCT = 10
 
+_HONORIFIC_PATTERN = re.compile(r"^(mr|mrs|ms|dr|shri|smt)\.?\s+", re.IGNORECASE)
+
+
+def _normalize_for_fuzzy(text: str) -> str:
+    """Lowercases and strips honorific prefixes (Mr./Mrs./etc.) before
+    fuzzy comparison, so 'ROSHAN ASHOK DESHMUKH' (Azure, all-caps) and
+    'Mr. Rohan Ashok Deshmukh' (LLM, mixed-case) compare fairly - the
+    difference that's left is the actual OCR spelling variation, not
+    casing or a title."""
+    text = _HONORIFIC_PATTERN.sub("", text.strip())
+    return text.lower()
+
 
 def _normalize_dob(value: str) -> str | None:
     """Parses a date string in any common format and returns ISO
@@ -35,8 +49,9 @@ def _normalize_pan(value: str) -> str:
 
 
 def _fuzzy_check(field_name: str, values: dict[str, str | None]) -> VerificationCheck:
-    """Compares all present text values pairwise using fuzzy similarity;
-    MATCHED only if every pair clears the threshold."""
+    """Compares all present text values pairwise using fuzzy similarity
+    (case-insensitive, honorifics stripped); MATCHED only if every pair
+    clears the threshold."""
     present = {doc: val for doc, val in values.items() if val}
 
     if len(present) < 2:
@@ -49,7 +64,10 @@ def _fuzzy_check(field_name: str, values: dict[str, str | None]) -> Verification
 
     pairs = list(present.items())
     scores = [
-        fuzz.token_sort_ratio(pairs[i][1], pairs[j][1])
+        fuzz.token_sort_ratio(
+            _normalize_for_fuzzy(pairs[i][1]),
+            _normalize_for_fuzzy(pairs[j][1]),
+        )
         for i in range(len(pairs))
         for j in range(i + 1, len(pairs))
     ]
