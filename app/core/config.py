@@ -11,6 +11,16 @@ class Settings(BaseSettings):
 
     credit_bureau_base_url: str = "http://127.0.0.1:8000"
 
+    database_url: str
+
+    jwt_secret_key: str
+    jwt_algorithm: str = "HS256"
+    jwt_expire_minutes: int = 60 * 24  # 24 hours
+
+    admin_username: str
+    admin_password: str
+    admin_email: str
+
     model_config = SettingsConfigDict(
         env_file=".env"
     )

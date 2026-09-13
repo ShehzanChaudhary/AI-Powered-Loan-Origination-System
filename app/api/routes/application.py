@@ -1,7 +1,8 @@
 import asyncio
 from uuid import uuid4
 from pathlib import Path
-from fastapi import APIRouter, UploadFile, File, HTTPException
+from fastapi import APIRouter, UploadFile, File, HTTPException, Depends
+from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.adapters.logger import logger
 from app.services.ingestion.zip_handler import extract_zip
@@ -14,6 +15,10 @@ from app.adapters.credit_bureau import credit_bureau
 from app.services.risk.risk_scorer import RiskScorer
 from app.services.decision.decision_engine import DecisionEngine
 from app.services.decision.justification_generator import generate_justification
+from app.core.database import get_db
+from app.services.persistence.application_repository import save_application
+from app.core.deps import get_current_user
+from app.models.user import User
 
 router = APIRouter(prefix="/api/v1/applications", tags=["Applications"])
 
@@ -30,7 +35,7 @@ def generate_application_id() -> str:
 
 
 @router.post("/upload", response_model=ApplicationResponse)
-async def upload_applications(file: UploadFile = File(...)):
+async def upload_applications(file: UploadFile = File(...), db: AsyncSession = Depends(get_db), current_user: User = Depends(get_current_user)):
     """Receives the customer's ZIP file, validates it, extracts, classifies,
     verifies every document inside, and returns the processed application
     summary."""
@@ -117,7 +122,7 @@ async def upload_applications(file: UploadFile = File(...)):
     except Exception as error:
         logger.error(f"[{application_id}] Justification generation failed: {error!r}")
 
-    return ApplicationResponse(
+    response = ApplicationResponse(
         application_id=application_id,
         status="received",
         file_name=file.filename,
@@ -125,5 +130,10 @@ async def upload_applications(file: UploadFile = File(...)):
         verification=verification,
         credit_report=credit_report,
         risk_assessment=risk_assessment,
-        final_decision=final_decision
+        final_decision=final_decision,
     )
+
+    # Stage 9: persist to database (non-fatal if it fails)
+    await save_application(db, response)
+
+    return response

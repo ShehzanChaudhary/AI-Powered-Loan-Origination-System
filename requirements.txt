@@ -9,3 +9,7 @@ aiohttp
 rapidfuzz 
 python-dateutil
 httpx
+sqlalchemy 
+asyncmy
+bcrypt 
+python-jose[cryptography]
